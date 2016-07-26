@@ -1,6 +1,7 @@
 package cron
 
 import (
+	"fmt"
 	"log"
 	"runtime"
 	"sort"
@@ -84,6 +85,18 @@ func NewWithLocation(location *time.Location) *Cron {
 		ErrorLog: nil,
 		location: location,
 	}
+}
+
+func Run(spec string, cmd func()) error {
+	c := New()
+	err := c.AddFunc(spec, cmd)
+	if err != nil {
+		return err
+	}
+	c.running = true
+	c.run()
+	// We should never return from the above
+	return fmt.Errorf("Unexpectedly returned from c.run()!")
 }
 
 // A wrapper that turns a func() into a cron.Job
