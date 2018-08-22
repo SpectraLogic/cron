@@ -252,6 +252,16 @@ func (c *Cron) Stop() {
 	c.running = false
 }
 
+// Stop stops the cron scheduler if it is running; otherwise it does nothing.
+func (c *Cron) StopAndClear() {
+	if !c.running {
+		return
+	}
+	c.stop <- struct{}{}
+	c.entries = nil
+	c.running = false
+}
+
 // entrySnapshot returns a copy of the current cron entry list.
 func (c *Cron) entrySnapshot() []*Entry {
 	entries := []*Entry{}
