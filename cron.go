@@ -47,6 +47,10 @@ type Job interface {
 	Run()
 }
 
+type JobTimeUpdater interface {
+	UpdatePrevAndNext(prev, next time.Time)
+}
+
 // The Schedule describes a job's duty cycle.
 type Schedule interface {
 	// Return the next activation time, later than the given time.
@@ -116,7 +120,7 @@ func genUUID() string {
 
 func Run(spec string, cmd func()) error {
 	c := New()
-	err := c.AddFunc(spec, cmd)
+	err := c.AddFunc(spec, cmd, genUUID())
 	if err != nil {
 		return err
 	}
@@ -164,6 +168,38 @@ func (c *Cron) Schedule(schedule Schedule, cmd Job, ID string) {
 		entry: entry,
 	}
 	c.command <- addCmd
+}
+
+func (c *Cron) RestoreTimes(ID string, prev, next time.Time) error {
+	if entry, ok := c.entries[ID]; ok {
+		entry.Prev = prev
+		entry.Next = next
+		if c.running {
+			updateCmd := command{
+				entry: entry,
+			}
+			c.command <- updateCmd
+		} else {
+			c.entries[ID] = entry
+		}
+	} else {
+		return fmt.Errorf("No such job %s", ID)
+	}
+	return nil
+}
+
+func (c *Cron) GetTimes(ID string) (prev, next time.Time, err error) {
+
+	for _, e := range c.Entries() {
+		if e.ID == ID {
+			prev = e.Prev
+			next = e.Next
+			err = nil
+			return
+		}
+	}
+	err = fmt.Errorf("Not such job %s", ID)
+	return
 }
 
 // RemoveJob deletes an existing job, if the job does not exist does nothing.
@@ -254,6 +290,9 @@ func (c *Cron) run() {
 					go c.runWithRecovery(e.Job)
 					e.Prev = e.Next
 					e.Next = e.Schedule.Next(now)
+					if timeUpdater, isUpdater := e.Job.(JobTimeUpdater); isUpdater {
+						timeUpdater.UpdatePrevAndNext(e.Prev, e.Next)
+					}
 				}
 
 			case cmd := <-c.command:
@@ -320,6 +359,7 @@ func (c *Cron) entrySnapshot() []*Entry {
 			Next:     e.Next,
 			Prev:     e.Prev,
 			Job:      e.Job,
+			ID:       e.ID,
 		})
 	}
 	sort.Sort(byTime(entries))
